@@ -48,7 +48,15 @@ curl http://127.0.0.1:8000/health
 You should see a simplified summary, key points, and suggested actions.
 You should also see a consent type classification and any dark pattern signals found.
 
-## 4. Run the Fake Website Simulator
+## 4. Use the Deployed Simulator (No Python Needed)
+
+Live URL:
+
+`https://anabhayana.github.io/cookie-consent-clarifier-prototype/`
+
+This GitHub Pages link opens the simulator directly. You do **not** need to run a local Python server for deployment.
+
+## 5. Run the Simulator Locally (Optional)
 
 From the project root:
 
