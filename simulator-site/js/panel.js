@@ -2,10 +2,8 @@
  * panel.js — the AI-assisted extension panel component
  *
  * Behaviour:
- *  - If the user has set a Groq API key (stored in sessionStorage),
- *    clicking a mode button calls the model and shows the live response.
- *  - If no key is set, it shows prewritten fallback text from data.js.
- *  - API key is NEVER persisted to localStorage — cleared when tab closes.
+ *  - AI calls are routed to the backend (owner-only access control).
+ *  - If backend AI is unavailable, it shows prewritten fallback text from data.js.
  *  - The panel never recommends accepting or rejecting cookies.
  */
 import { html, useState, useEffect } from "./deps.js?v=10";
@@ -106,10 +104,6 @@ function FallbackBody({ bannerKey, mode }) {
 export function ExtPanel({ bannerKey, open, onClose }) {
   const banner = BANNERS[bannerKey];
 
-  // API key — session only
-  const [apiKey,       setApiKeyState] = useState(() => sessionStorage.getItem("cc_key") || "");
-  const [showSettings, setShowSettings] = useState(false);
-
   // Panel state
   const [activeMode, setActiveMode] = useState(null);
   const [loading,    setLoading]    = useState(false);
@@ -129,12 +123,6 @@ export function ExtPanel({ bannerKey, open, onClose }) {
     setToolkitMode((prev) => (prev === mode ? null : mode));
   }
 
-  function persistKey(value) {
-    if (value) sessionStorage.setItem("cc_key", value);
-    else       sessionStorage.removeItem("cc_key");
-    setApiKeyState(value);
-  }
-
   async function handleMode(mode) {
     // Toggle off if already active
     if (activeMode === mode) {
@@ -148,16 +136,12 @@ export function ExtPanel({ bannerKey, open, onClose }) {
     setError(null);
     setAiText(null);
 
-    const key = apiKey.trim();
-    if (!key) return; // no key → show fallback (already handled in render)
-
     setLoading(true);
     try {
       const text = await callAI({
         bannerText: banner.captured,
         bannerType: banner.type,
         mode,
-        apiKey: key,
       });
       setAiText(text);
     } catch (e) {
@@ -166,8 +150,6 @@ export function ExtPanel({ bannerKey, open, onClose }) {
       setLoading(false);
     }
   }
-
-  const keyIsSet = apiKey.trim().startsWith("gsk_") || apiKey.trim().length > 20;
   const risk     = RISK[bannerKey];
 
   return html`
@@ -187,30 +169,10 @@ export function ExtPanel({ bannerKey, open, onClose }) {
       </div>
 
       <div className="ext-body">
-
-        <div className="settings-toggle" onClick=${() => setShowSettings((v) => !v)}>
-          <span>${showSettings ? "▲" : "▼"} AI options</span>
-          <span className=${"key-dot " + (keyIsSet ? "on" : "off")}>
-            ${keyIsSet ? "AI on" : "Local mode"}
-          </span>
-        </div>
-
-        ${showSettings && html`
-          <div className="settings-body">
-            <label className="key-label">Groq API key (free - <a href="https://console.groq.com" target="_blank">get one here</a>)</label>
-            <input
-              type="password"
-              className="key-input"
-              placeholder="gsk_..."
-              value=${apiKey}
-              onInput=${(e) => persistKey(e.target.value)}
-            />
-            <p className="key-note">
-              Free tier, no card needed. Saved only for this tab and cleared on close.
-              Sent to Groq directly, not saved by this demo.
-            </p>
-          </div>
-        `}
+        <p className="key-note">
+          AI is processed through the backend service.
+          If backend access is unavailable, local analysis is shown.
+        </p>
 
         <div className="captured">
           <span className="blk-lbl">Banner text</span>
@@ -282,7 +244,7 @@ export function ExtPanel({ bannerKey, open, onClose }) {
           </div>
         `}
 
-        ${error && html`<p className="err-note">${error} Showing local analysis below.</p>`}
+        ${error && html`<p className="err-note">${error} Using local analysis below.</p>`}
 
         ${!loading && activeMode && html`
           <div className="resp-card">

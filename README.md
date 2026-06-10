@@ -1,77 +1,194 @@
 # Cookie Consent Clarifier Prototype
 
-This prototype helps users better understand cookie consent notices by:
+A React-based simulator plus a FastAPI backend that helps users understand cookie consent banners in plain language.
 
-- Detecting likely cookie banner text on the current web page.
-- Rewriting that text into plain-language key points.
-- Classifying consent flow style (for example: granular opt-in, implied consent, accept-biased).
-- Flagging possible dark pattern signals in banner wording.
-- Suggesting practical privacy actions (reject/manage preferences).
+The project is built to:
+- Detect and display banner text patterns.
+- Explain banner meaning in neutral language.
+- Highlight potential privacy risks and dark-pattern wording.
+- Keep AI provider credentials on the backend only.
+- Restrict model access to the owner via an owner token.
 
-## Project Structure
+## What This Project Includes
 
-- `backend/` - FastAPI API that explains cookie notices.
-- `extension/` - Chrome extension popup + content script.
+- `simulator-site/`: Frontend simulator (React via `htm`/ES modules) that renders a fake website and a cookie helper side panel.
+- `backend/`: FastAPI service that performs owner-gated AI analysis and calls Groq server-side.
 
-## 1. Run the Backend (FastAPI)
+## Folder-by-Folder Guide
 
+```text
+cookie-consent-clarifier-prototype/
+├─ backend/
+│  ├─ main.py            # FastAPI app, auth checks, AI endpoint, Groq call
+│  ├─ requirements.txt   # Python dependencies for backend runtime
+│  └─ .env.example       # Template for OWNER_TOKEN and GROQ_API_KEY
+├─ simulator-site/
+│  ├─ index.html         # Frontend entry page
+│  ├─ css/
+│  │  └─ styles.css      # Visual styling for fake site + helper panel
+│  └─ js/
+│     ├─ app.js          # Root UI, site layout, banner simulation switching
+│     ├─ banners.js      # Banner components (manipulative/neutral/complex)
+│     ├─ data.js         # Static banner text, risk levels, fallback responses
+│     ├─ panel.js        # Cookie Helper panel interactions and rendering
+│     ├─ ai.js           # Frontend AI client -> backend `/api/analyze`
+│     └─ deps.js         # Frontend dependency exports
+├─ index.html            # Optional root entry (project-level)
+└─ README.md             # Project documentation
+```
+
+## Architecture and Flow
+
+1. User opens simulator UI at `simulator-site/index.html`.
+2. User selects a banner pattern and clicks a helper action (`What this says`, `Simple words`, `Show privacy risk`).
+3. Frontend calls backend endpoint: `POST /api/analyze`.
+4. Backend verifies `X-Owner-Token` against `OWNER_TOKEN`.
+5. If valid, backend calls Groq using `GROQ_API_KEY` (server-side only).
+6. Frontend displays AI text on success.
+7. If backend/auth/AI is unavailable, frontend shows local fallback analysis.
+
+## Security Model (Owner-Only AI)
+
+The AI provider key is never entered in frontend UI and never sent from the browser to Groq directly.
+
+Enforcement is done on the backend:
+- Required request header: `X-Owner-Token`
+- Required backend env values:
+  - `OWNER_TOKEN`
+  - `GROQ_API_KEY`
+- Behavior:
+  - Missing/invalid owner token -> `403 Owner access required`
+  - Missing provider key -> `500 GROQ_API_KEY is not configured on server`
+
+## Website / Simulator Highlights
+
+The simulator intentionally contains a polished fake website and multiple consent patterns so behavior can be demoed clearly.
+
+Highlights:
+- Three banner styles with different UX intent:
+  - Manipulative (accept-biased)
+  - Neutral (balanced controls)
+  - Complex / legal-heavy
+- Sliding Cookie Helper side panel with:
+  - AI analysis actions
+  - Quick tools (tricky wording scan, compare options, checklist)
+  - Local fallback responses when AI is unavailable
+- Rich page content to simulate real-world context:
+  - Hero section, recipe cards, article content, techniques grid, ingredient cards
+  - Interactive React batch calculator
+- Privacy-neutral tone: helper explains, user decides.
+
+## Backend API
+
+### `GET /health`
+Simple health check.
+
+Response:
+```json
+{ "ok": true }
+```
+
+### `POST /api/analyze`
+Owner-gated AI analysis endpoint.
+
+Headers:
+- `Content-Type: application/json`
+- `X-Owner-Token: <OWNER_TOKEN>`
+
+Request body:
+```json
+{
+  "banner_text": "...",
+  "banner_type": "Manipulative — dark pattern design",
+  "mode": "explain"
+}
+```
+
+`mode` values:
+- `explain`
+- `simplify`
+- `risks`
+
+Success response:
+```json
+{
+  "text": "...",
+  "source": "backend"
+}
+```
+
+## Run Locally
+
+### 1) Start backend
 From `backend/`:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Edit `.env` and set:
+
+```env
+OWNER_TOKEN=replace-with-strong-owner-token
+GROQ_API_KEY=gsk_replace_with_real_key
+GROQ_MODEL=llama-3.1-8b-instant
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=500
+```
+
+Run backend:
+
+```powershell
 uvicorn main:app --reload
 ```
 
-API will be available at `http://127.0.0.1:8000`.
+Backend URL: `http://127.0.0.1:8000`
 
-Health check:
-
-```powershell
-curl http://127.0.0.1:8000/health
-```
-
-## 2. Load the Extension in Chrome
-
-1. Open Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**.
-4. Select the `extension/` folder.
-
-## 3. Test the Prototype
-
-1. Open a website that shows a cookie banner.
-2. Click the extension icon.
-3. Press **Analyze Current Page**.
-
-You should see a simplified summary, key points, and suggested actions.
-You should also see a consent type classification and any dark pattern signals found.
-
-## 4. Use the Deployed Simulator (No Python Needed)
-
-Live URL:
-
-`https://anabhayana.github.io/cookie-consent-clarifier-prototype/`
-
-This GitHub Pages link opens the simulator directly. You do **not** need to run a local Python server for deployment.
-
-## 5. Run the Simulator Locally (Optional)
-
-From the project root:
+### 2) Start frontend simulator
+From project root:
 
 ```powershell
 python -m http.server 5500
 ```
 
-Then open:
+Open:
+- `http://127.0.0.1:5500/simulator-site/index.html`
 
-`http://127.0.0.1:5500/simulator-site/index.html`
+### 3) Set owner token in browser session (for local simulator testing)
 
-This page includes multiple simulated cookie banners (granular opt-in, accept-biased, implied consent, legitimate interest) so users can test the extension behavior safely.
+In browser DevTools console:
+
+```js
+sessionStorage.setItem("cc_owner_token", "<OWNER_TOKEN>");
+```
+
+Optional (override backend URL without code changes):
+
+```js
+sessionStorage.setItem("cc_backend_url", "http://127.0.0.1:8000");
+```
+
+## Troubleshooting
+
+- `AI error: Backend is offline or unreachable.`
+  - Start FastAPI backend and verify port `8000` is listening.
+
+- `AI error: Owner token missing or invalid.`
+  - Ensure `sessionStorage.cc_owner_token` matches backend `OWNER_TOKEN` exactly.
+
+- `AI error: Backend AI key is not configured.`
+  - Set `GROQ_API_KEY` in `backend/.env` and restart backend.
+
+- Getting only fallback responses
+  - Confirm backend is reachable from browser.
+  - Confirm token is valid.
+  - Check backend logs for 403/500/502 status codes.
 
 ## Notes
 
-- This is rule-based, not legal advice.
-- Detection quality depends on each website's HTML structure.
-- For production, replace heuristics with a stronger NLP or LLM pipeline and multilingual support.
+- This is a prototype and not legal advice.
+- Current analysis quality depends on prompts and model behavior.
+- For production, consider stricter origin controls, rate limiting, audit logging, and moving token handling fully to extension background/service worker context.
