@@ -32,13 +32,6 @@ export const BANNERS = {
   },
 };
 
-/** Risk level per banner type, used for the risk bar */
-export const RISK = {
-  manipulative: "high",
-  neutral: "low",
-  complex: "med",
-};
-
 /**
  * FALLBACK responses — shown when no OpenAI API key is set.
  * Shape: { [bannerKey]: { [mode]: { title, bullets?: string[], paras?: string[] } } }

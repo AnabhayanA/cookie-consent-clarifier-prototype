@@ -29,7 +29,7 @@ async function parseApiError(response) {
   if (response.status === 403) {
     return "Owner token missing or invalid.";
   }
-  if (response.status === 500 && detail.includes("GROQ_API_KEY")) {
+  if (response.status === 500 && detail.includes("GEMINI_API_KEY")) {
     return "Backend AI key is not configured.";
   }
   return detail || `Backend returned ${response.status}`;

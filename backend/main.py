@@ -85,11 +85,11 @@ async def analyze(
     if x_owner_token != owner_token:
         raise HTTPException(status_code=403, detail="Owner access required")
 
-    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
-    if not groq_api_key:
-        raise HTTPException(status_code=500, detail="GROQ_API_KEY is not configured on server")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on server")
 
-    model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))
     max_tokens = int(os.getenv("LLM_MAX_TOKENS", "500"))
 
@@ -97,19 +97,19 @@ async def analyze(
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            "https://api.groq.com/openai/v1/chat/completions",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_api_key}",
             headers={
-                "Authorization": f"Bearer {groq_api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
+                "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                "contents": [
+                    {"role": "user", "parts": [{"text": user_prompt}]},
                 ],
-                "temperature": temperature,
-                "max_tokens": max_tokens,
+                "generationConfig": {
+                    "temperature": temperature,
+                    "maxOutputTokens": max_tokens,
+                },
             },
         )
 
@@ -121,5 +121,8 @@ async def analyze(
         raise HTTPException(status_code=502, detail=detail)
 
     data = resp.json()
-    text = data["choices"][0]["message"]["content"].strip()
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        raise HTTPException(status_code=502, detail="LLM response format was unexpected")
     return AnalyzeResponse(text=text, source="backend")

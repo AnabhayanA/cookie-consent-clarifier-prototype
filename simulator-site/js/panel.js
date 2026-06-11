@@ -7,7 +7,7 @@
  *  - The panel never recommends accepting or rejecting cookies.
  */
 import { html, useState, useEffect } from "./deps.js?v=10";
-import { BANNERS, FALLBACK, RISK }   from "./data.js?v=10";
+import { BANNERS, FALLBACK }   from "./data.js?v=10";
 import { callAI }                    from "./ai.js?v=10";
 
 const MODE_TITLES = {
@@ -17,11 +17,62 @@ const MODE_TITLES = {
 };
 
 const RISK_LABELS = { low: "Low risk", med: "Medium risk", high: "High risk" };
+const RISK_MEANING = {
+  low: "Low means balanced consent design with lower pressure and narrower tracking signals.",
+  med: "Medium means meaningful privacy concerns exist, but pressure or scope is mixed.",
+  high: "High means stronger pressure patterns or broad data-sharing/tracking signals.",
+};
 const TOOLKIT_TITLES = {
   scan: "Tricky Wording Check",
   compare: "Choice Compare",
   checklist: "Before You Choose",
 };
+
+const RISK_SIGNAL_RULES = [
+  {
+    pattern: /accept all|allow all|agree to all/,
+    weight: 2,
+    reason: "Strong consent wording can nudge users toward full tracking.",
+  },
+  {
+    pattern: /tiny|low-contrast|hard to find|less visible|hidden reject/,
+    weight: 3,
+    reason: "Reject controls appear harder to notice than accept controls.",
+  },
+  {
+    pattern: /partners|third[- ]party|share/,
+    weight: 2,
+    reason: "Data may be shared with external companies.",
+  },
+  {
+    pattern: /ads?|advertis|personalis|profil/,
+    weight: 2,
+    reason: "Banner indicates ad targeting or profiling activity.",
+  },
+  {
+    pattern: /legitimate interests|article 6|gdpr|lawfulness/,
+    weight: 1,
+    reason: "Dense legal framing may reduce clarity for users.",
+  },
+  {
+    pattern: /pre-enabled|preenabled|default on|toggles? may be pre-enabled/,
+    weight: 2,
+    reason: "Some consent controls may start enabled by default.",
+  },
+];
+
+const RISK_MITIGATION_RULES = [
+  {
+    pattern: /equal visual weight|equally available|all three choices/,
+    weight: -2,
+    reason: "Choice options appear balanced instead of one-sided.",
+  },
+  {
+    pattern: /decline|reject|manage/,
+    weight: -1,
+    reason: "Clear alternatives to full acceptance are present.",
+  },
+];
 
 function runDarkPatternScan(text) {
   const lower = text.toLowerCase();
@@ -40,9 +91,57 @@ function runDarkPatternScan(text) {
   return findings;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function computeRiskFromText(text) {
+  const lower = (text || "").toLowerCase();
+  let score = 0;
+  const reasons = [];
+
+  for (const rule of RISK_SIGNAL_RULES) {
+    if (rule.pattern.test(lower)) {
+      score += rule.weight;
+      reasons.push(rule.reason);
+    }
+  }
+
+  for (const rule of RISK_MITIGATION_RULES) {
+    if (rule.pattern.test(lower)) {
+      score += rule.weight;
+      reasons.push(rule.reason);
+    }
+  }
+
+  const partnerMatch = lower.match(/(\d{2,4})\s+partners?/);
+  if (partnerMatch) {
+    const count = Number(partnerMatch[1]);
+    if (count >= 100) {
+      score += 3;
+      reasons.push("A large number of partners may receive personal data.");
+    } else if (count >= 20) {
+      score += 2;
+      reasons.push("Multiple partner organizations may receive personal data.");
+    }
+  }
+
+  score = clamp(score, 0, 10);
+
+  let level = "low";
+  if (score >= 5) level = "high";
+  else if (score >= 2) level = "med";
+
+  return {
+    level,
+    score,
+    reasons: reasons.length ? reasons : ["No strong high-risk or pressure signals were detected in this banner text."],
+  };
+}
+
 /* ── Sub-components ──────────────────────────────────────────────── */
 
-function RiskBar({ level }) {
+function RiskBar({ level, score, reasons = [] }) {
   return html`
     <div className="risk-wrap">
       <div className="risk-hdr">
@@ -52,6 +151,13 @@ function RiskBar({ level }) {
       <div className="risk-track">
         <div className=${"risk-fill " + level} />
       </div>
+      <p>Signal score: ${score}/10</p>
+      <p>${RISK_MEANING[level]}</p>
+      ${reasons.length > 0 && html`
+        <ul className="resp-bullets">
+          ${reasons.map((item, i) => html`<li key=${i}>${item}</li>`)}
+        </ul>
+      `}
     </div>
   `;
 }
@@ -150,7 +256,7 @@ export function ExtPanel({ bannerKey, open, onClose }) {
       setLoading(false);
     }
   }
-  const risk     = RISK[bannerKey];
+  const riskAssessment = computeRiskFromText(banner.captured);
 
   return html`
     <aside className=${"ext-panel" + (open ? " open" : "")}>
@@ -248,7 +354,11 @@ export function ExtPanel({ bannerKey, open, onClose }) {
 
         ${!loading && activeMode && html`
           <div className="resp-card">
-            <${RiskBar} level=${risk} />
+            <${RiskBar}
+              level=${riskAssessment.level}
+              score=${riskAssessment.score}
+              reasons=${riskAssessment.reasons}
+            />
             <span className=${"resp-source " + (aiText ? "ai" : "demo")}>
               ${aiText ? "AI answer" : "Local answer"}
             </span>
